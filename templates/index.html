@@ -14,69 +14,55 @@
       min-height: 100vh;
       padding: 20px;
     }
-    header {
-      text-align: center;
-      padding: 20px 0 30px;
-    }
+    header { text-align: center; padding: 20px 0 30px; }
     header h1 { font-size: 1.8rem; color: #4fc3f7; }
     header p  { color: #888; margin-top: 6px; font-size: 0.9rem; }
 
-    #status {
-      text-align: center;
-      margin-bottom: 20px;
-      font-size: 0.85rem;
-    }
+    #status { text-align: center; margin-bottom: 20px; font-size: 0.85rem; }
     .dot {
-      display: inline-block;
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      background: #f44336;
-      margin-right: 6px;
-      vertical-align: middle;
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; background: #f44336;
+      margin-right: 6px; vertical-align: middle;
     }
     .dot.connected { background: #4caf50; }
 
-    #feed { max-width: 800px; margin: 0 auto; }
+    #setup-box {
+      max-width: 500px; margin: 40px auto; background: #1e2130;
+      border-radius: 12px; padding: 24px; text-align: center;
+    }
+    #setup-box p { color: #aaa; margin-bottom: 14px; font-size: 0.9rem; }
+    #setup-box input {
+      width: 100%; padding: 10px 14px; border-radius: 8px;
+      border: 1px solid #333; background: #0f1117; color: #e0e0e0;
+      font-size: 0.95rem; margin-bottom: 12px;
+    }
+    #setup-box button {
+      background: #4fc3f7; color: #000; border: none;
+      padding: 10px 28px; border-radius: 8px; cursor: pointer;
+      font-size: 0.95rem; font-weight: 600;
+    }
+    #setup-box button:hover { background: #81d4fa; }
 
+    #feed { max-width: 800px; margin: 0 auto; display: none; }
     .card {
-      background: #1e2130;
-      border-radius: 12px;
-      padding: 18px 22px;
-      margin-bottom: 16px;
+      background: #1e2130; border-radius: 12px;
+      padding: 18px 22px; margin-bottom: 16px;
       border-left: 4px solid #4fc3f7;
       animation: slideIn 0.3s ease;
     }
     @keyframes slideIn {
-      from { opacity: 0; transform: translateY(-10px); }
+      from { opacity: 0; transform: translateY(10px); }
       to   { opacity: 1; transform: translateY(0); }
     }
     .card .time  { font-size: 0.75rem; color: #666; margin-bottom: 8px; }
-    .card .question {
-      font-size: 0.95rem;
-      color: #90caf9;
-      margin-bottom: 10px;
-    }
+    .card .question { font-size: 0.95rem; color: #90caf9; margin-bottom: 10px; }
     .card .question span { color: #555; margin-right: 6px; }
-    .card .answer {
-      font-size: 0.9rem;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      color: #e0e0e0;
-    }
+    .card .answer { font-size: 0.9rem; line-height: 1.6; white-space: pre-wrap; }
     .card .answer code {
-      background: #2a2d3e;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: monospace;
-      color: #80cbc4;
+      background: #2a2d3e; padding: 2px 6px;
+      border-radius: 4px; font-family: monospace; color: #80cbc4;
     }
-
-    #empty {
-      text-align: center;
-      color: #444;
-      margin-top: 80px;
-      font-size: 1rem;
-    }
+    #empty { text-align: center; color: #444; margin-top: 60px; font-size: 1rem; }
   </style>
 </head>
 <body>
@@ -87,7 +73,15 @@
 
   <div id="status">
     <span class="dot" id="dot"></span>
-    <span id="status-text">Connecting...</span>
+    <span id="status-text">Not connected</span>
+  </div>
+
+  <!-- Setup box shown if no server URL in query param -->
+  <div id="setup-box">
+    <p>Enter your ngrok server URL to connect<br><small>(run <code>ngrok http 5000</code> on your PC)</small></p>
+    <input id="server-input" type="text" placeholder="https://xxxx.ngrok-free.app" />
+    <br>
+    <button onclick="connect()">Connect</button>
   </div>
 
   <div id="feed">
@@ -95,46 +89,60 @@
   </div>
 
   <script>
-    const socket = io();
-    const feed   = document.getElementById('feed');
-    const empty  = document.getElementById('empty');
-    const dot    = document.getElementById('dot');
+    const feed       = document.getElementById('feed');
+    const empty      = document.getElementById('empty');
+    const dot        = document.getElementById('dot');
     const statusText = document.getElementById('status-text');
+    const setupBox   = document.getElementById('setup-box');
 
-    socket.on('connect', () => {
-      dot.classList.add('connected');
-      statusText.textContent = 'Connected — listening for AI answers';
-    });
-
-    socket.on('disconnect', () => {
-      dot.classList.remove('connected');
-      statusText.textContent = 'Disconnected';
-    });
-
-    socket.on('ai_result', (data) => {
-      empty.style.display = 'none';
-
-      const card = document.createElement('div');
-      card.className = 'card';
-
-      const now = new Date().toLocaleTimeString();
-      card.innerHTML = `
-        <div class="time">${now}</div>
-        <div class="question"><span>🗣️</span>${escapeHtml(data.question)}</div>
-        <div class="answer">${formatAnswer(data.answer)}</div>
-      `;
-
-      feed.appendChild(card);
-      card.scrollIntoView({ behavior: 'smooth' });
-    });
-
-    function escapeHtml(text) {
-      return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // Auto-connect if ?server=URL is in the address bar
+    const params = new URLSearchParams(window.location.search);
+    const autoServer = params.get('server');
+    if (autoServer) {
+      document.getElementById('server-input').value = autoServer;
+      connect();
     }
 
-    function formatAnswer(text) {
-      // Wrap inline code blocks
-      return escapeHtml(text).replace(/`([^`]+)`/g, '<code>$1</code>');
+    function connect() {
+      const url = document.getElementById('server-input').value.trim();
+      if (!url) return;
+
+      setupBox.style.display = 'none';
+      feed.style.display = 'block';
+      statusText.textContent = 'Connecting to ' + url;
+
+      const socket = io(url, { transports: ['websocket', 'polling'] });
+
+      socket.on('connect', () => {
+        dot.classList.add('connected');
+        statusText.textContent = 'Connected — listening for AI answers';
+      });
+
+      socket.on('disconnect', () => {
+        dot.classList.remove('connected');
+        statusText.textContent = 'Disconnected';
+      });
+
+      socket.on('ai_result', (data) => {
+        empty.style.display = 'none';
+        const card = document.createElement('div');
+        card.className = 'card';
+        const now = new Date().toLocaleTimeString();
+        card.innerHTML = `
+          <div class="time">${now}</div>
+          <div class="question"><span>🗣️</span>${escapeHtml(data.question)}</div>
+          <div class="answer">${formatAnswer(data.answer)}</div>
+        `;
+        feed.appendChild(card);
+        card.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+
+    function escapeHtml(t) {
+      return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function formatAnswer(t) {
+      return escapeHtml(t).replace(/`([^`]+)`/g, '<code>$1</code>');
     }
   </script>
 </body>
